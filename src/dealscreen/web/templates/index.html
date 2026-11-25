@@ -65,7 +65,7 @@
       <tr onclick="location.href='/screenings/{{ r.id }}'">
         <td><strong>{{ r.company.name if r.company else r.query }}</strong>{% if r.company %}<div class="muted small">{{ r.company.company_number }}</div>{% endif %}</td>
         <td><span class="rec rec-{{ r.score.recommendation.value }}">{{ r.score.recommendation.value }}</span></td>
-        <td>{{ "%.0f"|format(r.score.total) }}</td>
+        <td>{% if r.score.coverage > 0 %}{{ "%.0f"|format(r.score.total) }}{% else %}<span class="muted">n/a</span>{% endif %}</td>
         <td>{{ "%.0f"|format(r.score.coverage * 100) }}%</td>
         <td>{% if high %}<span class="flag flag-high">{{ high }} high</span>{% else %}<span class="muted">{{ r.red_flags|length }}</span>{% endif %}</td>
         <td><span class="review review-{{ r.review_status.value }}">{{ r.review_status.value }}</span></td>

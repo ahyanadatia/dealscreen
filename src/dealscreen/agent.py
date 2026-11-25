@@ -18,6 +18,7 @@ from dataclasses import dataclass, field
 from datetime import UTC, datetime
 from typing import Any, Protocol
 
+import anthropic
 from pydantic import BaseModel, Field, ValidationError
 
 from dealscreen.models import (
@@ -104,6 +105,9 @@ Working rules:
   found evidence for. Registry-based checks run separately, so focus on what the web reveals.
 - Rate every thesis criterion listed, from 0 to 5, with a short rationale. Low evidence means a
   cautious score and a rationale that says the evidence is thin.
+- Entity resolution: if the dossier has no confident registry match (profile is null), use
+  search_companies_house and get_company_record to find the right legal entity, and set
+  company_number in your submission. Never guess a number you have not retrieved.
 - Finish by calling submit_assessment exactly once."""
 
 
@@ -241,6 +245,19 @@ class ScreeningAgent:
         if self._emit is not None:
             self._emit(ev)
 
+    def _create(self, kwargs: dict[str, Any]) -> Any:
+        """Call the API. A forced tool_choice is rejected by some models when thinking is on;
+        in that case retry once with automatic tool choice (the prompt already demands submission).
+        """
+        try:
+            return self.client.create(**kwargs)
+        except anthropic.BadRequestError as exc:
+            if "tool_choice" not in kwargs or "tool_choice" not in str(exc):
+                raise
+            self.emit("warning", "Model rejected forced tool_choice; retrying with auto.")
+            retry = {k: v for k, v in kwargs.items() if k != "tool_choice"}
+            return self.client.create(**retry)
+
     def _tools(self) -> list[dict[str, Any]]:
         tools: list[dict[str, Any]] = [*TOOL_SCHEMAS, SUBMIT_SCHEMA]
         if self.web_search:
@@ -288,7 +305,7 @@ class ScreeningAgent:
                 kwargs["tool_choice"] = {"type": "tool", "name": SUBMIT_TOOL}
                 forced = True
             self.emit("llm", f"Model call {turn}" + (" (forced submission)" if forced else ""))
-            response = self.client.create(**kwargs)
+            response = self._create(kwargs)
             u = getattr(response, "usage", None)
             if u is not None:
                 usage["input_tokens"] += int(getattr(u, "input_tokens", 0) or 0)
@@ -296,6 +313,9 @@ class ScreeningAgent:
 
             content = list(response.content)
             messages.append({"role": "assistant", "content": [_block_to_param(b) for b in content]})
+            if response.stop_reason == "pause_turn":
+                # A long server-side tool turn was paused; send it back as-is to resume.
+                continue
             for b in content:
                 if b.type == "text" and b.text.strip():
                     self.emit("thought", b.text.strip()[:600])

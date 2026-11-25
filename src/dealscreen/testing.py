@@ -33,7 +33,7 @@ def message(
     content: list[dict[str, Any]],
     *,
     stop_reason: str = "tool_use",
-    model: str = "claude-sonnet-4-5",
+    model: str = "claude-sonnet-5-5",
     msg_id: str = "msg_scripted",
     input_tokens: int = 1200,
     output_tokens: int = 300,
@@ -83,6 +83,11 @@ def check_request(body: dict[str, Any]) -> None:
             raise ContractError("tool_choice names an undefined tool")
 
 
+def api_error(status: int, message: str, kind: str = "invalid_request_error") -> dict[str, Any]:
+    """A scripted API error response (e.g. 400 invalid_request_error)."""
+    return {"__status__": status, "type": "error", "error": {"type": kind, "message": message}}
+
+
 class ScriptedAnthropic:
     def __init__(self, responses: list[dict[str, Any]]):
         self.responses = list(responses)
@@ -104,7 +109,9 @@ class ScriptedAnthropic:
         self.headers.append(request.headers)
         if not self.responses:
             raise ContractError("no scripted responses left")
-        return httpx.Response(200, json=self.responses.pop(0))
+        nxt = self.responses.pop(0)
+        status = int(nxt.pop("__status__", 200))
+        return httpx.Response(status, json=nxt)
 
     def client(self) -> anthropic.Anthropic:
         return anthropic.Anthropic(

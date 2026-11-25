@@ -22,12 +22,18 @@ def _clean(name: str) -> str:
     return " ".join(LEGAL_SUFFIXES.sub(" ", name.lower()).replace(".", " ").split())
 
 
+MIN_MATCH_CONFIDENCE = 0.72
+
+
+def name_similarity(query: str, name: str) -> float:
+    return SequenceMatcher(None, _clean(query), _clean(name)).ratio()
+
+
 def rank_candidates(query: str, hits: list[CompanySearchHit]) -> list[CompanySearchHit]:
     """Order search hits by name similarity, preferring live companies over dissolved ones."""
-    q = _clean(query)
 
     def key(hit: CompanySearchHit) -> float:
-        sim = SequenceMatcher(None, q, _clean(hit.name)).ratio()
+        sim = name_similarity(query, hit.name)
         if hit.status and hit.status.lower() == "dissolved":
             sim -= 0.3
         return sim
@@ -93,6 +99,16 @@ def resolve(
             return RegistryRecord(warnings=[f"Companies House search failed: {exc}"])
         if not candidates:
             return RegistryRecord(warnings=[f"No Companies House match for '{query}'."])
+        confidence = name_similarity(query, candidates[0].name)
+        if confidence < MIN_MATCH_CONFIDENCE:
+            names = ", ".join(f"{c.name} ({c.company_number})" for c in candidates[:3])
+            return RegistryRecord(
+                candidates=candidates,
+                warnings=[
+                    f"No confident Companies House match for '{query}' (best: {names}). "
+                    "Pass the company number to screen the right entity."
+                ],
+            )
         number = candidates[0].company_number
     try:
         rec = fetch_record(ch, ledger, number)

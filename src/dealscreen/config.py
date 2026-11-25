@@ -15,7 +15,7 @@ class Settings(BaseSettings):
     )
 
     anthropic_api_key: SecretStr | None = Field(default=None, alias="ANTHROPIC_API_KEY")
-    anthropic_model: str = Field(default="claude-sonnet-4-5", alias="DEALSCREEN_MODEL")
+    anthropic_model: str = Field(default="claude-sonnet-5-5", alias="DEALSCREEN_MODEL")
     anthropic_web_search: bool = Field(default=False, alias="DEALSCREEN_ANTHROPIC_WEB_SEARCH")
     companies_house_api_key: SecretStr | None = Field(default=None, alias="COMPANIES_HOUSE_API_KEY")
 

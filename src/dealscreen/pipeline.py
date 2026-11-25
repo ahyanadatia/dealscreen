@@ -221,7 +221,7 @@ class Screener:
         return {
             "registry_source_ids": rec.source_ids,
             "profile": rec.company.model_dump(mode="json") if rec.company else None,
-            "other_candidates": [c.model_dump(mode="json") for c in rec.candidates[1:5]],
+            "registry_candidates": [c.model_dump(mode="json") for c in rec.candidates[:5]],
             "active_officers": [o.model_dump(mode="json") for o in active[:12]],
             "resigned_officer_count": len(rec.officers) - len(active),
             "recent_filings": [f.model_dump(mode="json") for f in rec.filings[:12]],
