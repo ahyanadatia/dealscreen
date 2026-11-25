@@ -1,0 +1,6 @@
+company,status,registered_name,company_number,recommendation,score,coverage,high_flags,result_id,error
+Zenobe Energy,ok,ZENOBE ENERGY LIMITED,10436249,review,100.0,0.31,0,c520c886b1c8,
+Kaluza,ok,KALUZA LTD,12218299,review,77.8,0.31,0,13881eb0bfec,
+Highview Enterprises,ok,HIGHVIEW ENTERPRISES LIMITED,04489271,review,77.8,0.31,0,21a1fe425e2f,
+Ripple Energy,ok,RIPPLE ENERGY LIMITED,10565718,pass,33.3,0.31,4,0567fd948009,
+Ohme Technologies,ok,,,review,0.0,0.0,0,cd67a02e6bfa,
