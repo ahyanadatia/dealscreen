@@ -1,0 +1,25 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>{% block title %}dealscreen{% endblock %}</title>
+  <link rel="stylesheet" href="/static/app.css">
+</head>
+<body>
+  <header class="topbar">
+    <a class="brand" href="/"><span class="logo">◆</span> dealscreen</a>
+    <nav>
+      <span class="pill {{ 'pill-ok' if llm_enabled else 'pill-warn' }}">
+        {% if llm_enabled %}Agent: {{ model }}{% else %}Data-only mode (no ANTHROPIC_API_KEY){% endif %}
+      </span>
+      <span class="muted small">v{{ version }}</span>
+    </nav>
+  </header>
+  <main class="container">
+    {% block content %}{% endblock %}
+  </main>
+  <footer class="footer muted small">First-pass screening for human review. Not investment advice. Registry data © Crown copyright, Companies House.</footer>
+  {% block scripts %}{% endblock %}
+</body>
+</html>

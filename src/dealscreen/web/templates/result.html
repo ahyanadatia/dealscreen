@@ -1,0 +1,101 @@
+{% extends "base.html" %}
+{% macro cite(ids) -%}
+{% for i in ids %}{% set s = sources.get(i) %}{% if s %}<a class="cite" href="{{ s.url }}" target="_blank" rel="noopener noreferrer" title="{{ s.title }}">{{ i }}</a>{% endif %}{% endfor %}
+{%- endmacro %}
+{% block title %}{{ r.company.name if r.company else r.query }} · dealscreen{% endblock %}
+{% block content %}
+{% set c = r.company %}{% set a = r.assessment %}
+<a href="/" class="muted small">← Pipeline</a>
+
+{% if r.mode == "sample" %}
+<div class="banner banner-warn"><strong>Sample output.</strong> Fictional company, offline fixtures and scripted model responses. Not a live run.</div>
+{% elif r.mode == "data-only" %}
+<div class="banner">Data-only run: registry data and rule checks, no LLM. Agent criteria are shown as not assessed.</div>
+{% endif %}
+
+<section class="result-head card">
+  <div>
+    <h1>{{ c.name if c else r.query }}</h1>
+    <p class="muted">
+      {% if c %}{{ c.company_number }} · {{ c.status }} · incorporated {{ c.incorporated_on or "unknown" }} · SIC {{ c.sic_codes|join(", ") or "n/a" }}{% endif %}
+      {% if r.website %} · <a href="{{ r.website }}" target="_blank" rel="noopener noreferrer">{{ r.website }}</a>{% endif %}
+    </p>
+    {% if a %}<p class="lead">{{ a.one_liner }}</p>{% endif %}
+  </div>
+  <div class="scorebox">
+    <span class="rec rec-{{ r.score.recommendation.value }} rec-lg">{{ r.score.recommendation.value }}</span>
+    <div class="score">{{ "%.0f"|format(r.score.total) }}<span>/100</span></div>
+    <div class="muted small">coverage {{ "%.0f"|format(r.score.coverage*100) }}% · {{ r.thesis_name }}</div>
+    {% if r.score.failed_must_haves %}<div class="flag flag-high small">failed must-have: {{ r.score.failed_must_haves|join(", ") }}</div>{% endif %}
+  </div>
+</section>
+
+<section class="grid-2">
+  <div class="card">
+    <h2>Thesis fit</h2>
+    <table class="table compact">
+      <thead><tr><th>Criterion</th><th>Wt</th><th>Score</th><th>Rationale</th></tr></thead>
+      <tbody>
+      {% for cr in r.score.criteria %}
+        <tr class="nohover">
+          <td><strong>{{ cr.label }}</strong><div class="muted small">{{ cr.method }}</div></td>
+          <td>{{ cr.weight }}</td>
+          <td class="nowrap">{% if cr.score is not none %}<div class="bar"><span style="width: {{ cr.score*20 }}%"></span></div>{{ "%.1f"|format(cr.score) }}{% else %}<span class="muted">n/a</span>{% endif %}</td>
+          <td class="small">{{ cr.rationale }} {{ cite(cr.source_ids) }}</td>
+        </tr>
+      {% endfor %}
+      </tbody>
+    </table>
+  </div>
+  <div class="card">
+    <h2>Red flags</h2>
+    {% for fl in r.red_flags %}
+      <div class="flagrow"><span class="flag flag-{{ fl.severity.value }}">{{ fl.severity.value }}</span>
+        <div><strong>{{ fl.title }}</strong> <span class="muted small">{{ fl.origin }}</span><div class="small">{{ fl.detail }} {{ cite(fl.source_ids) }}</div></div></div>
+    {% else %}<p class="muted">None identified.</p>{% endfor %}
+  </div>
+</section>
+
+{% if a %}
+<section class="grid-2">
+  <div class="card">
+    <h2>Key facts</h2>
+    <p><strong>Business model.</strong> {{ a.business_model }}</p>
+    <ul class="facts">{% for f in a.facts %}<li>{{ f.claim }} {{ cite(f.source_ids) }}</li>{% endfor %}</ul>
+    {% if a.unverified_claims %}<h3>Unverified claims</h3><ul class="facts muted">{% for u in a.unverified_claims %}<li>{{ u }}</li>{% endfor %}</ul>{% endif %}
+  </div>
+  <div class="card">
+    <h2>Competitive landscape</h2>
+    <ul class="facts">{% for comp in a.competitors %}<li><strong>{{ comp.name }}</strong>: {{ comp.note }} {{ cite(comp.source_ids) }}</li>{% else %}<li class="muted">Not assessed.</li>{% endfor %}</ul>
+    <h2>Questions for management</h2>
+    <ol class="facts">{% for q in a.key_questions %}<li>{{ q }}</li>{% endfor %}</ol>
+  </div>
+</section>
+{% endif %}
+
+<section class="grid-2">
+  <form class="card" method="post" action="/screenings/{{ r.id }}/review">
+    <h2>Human review</h2>
+    <p class="muted small">Current status: <span class="review review-{{ r.review_status.value }}">{{ r.review_status.value }}</span>{% if r.reviewer %} by {{ r.reviewer }}{% endif %}</p>
+    <label>Reviewer <input name="reviewer" maxlength="80" value="{{ r.reviewer or '' }}" placeholder="Your name"></label>
+    <label>Notes <textarea name="notes" rows="4" maxlength="4000" placeholder="Corrections, context, next steps">{{ r.review_notes }}</textarea></label>
+    <div class="row-btns">
+      <button class="btn" name="decision" value="approved">Approve to pipeline</button>
+      <button class="btn btn-danger" name="decision" value="rejected">Reject</button>
+      <a class="btn btn-secondary" href="/screenings/{{ r.id }}/memo.md">Download memo (.md)</a>
+    </div>
+  </form>
+  <div class="card">
+    <h2>Sources ({{ r.sources|length }})</h2>
+    <ol class="sources">{% for s in r.sources %}<li><span class="cite">{{ s.id }}</span> <a href="{{ s.url }}" target="_blank" rel="noopener noreferrer">{{ s.title }}</a> <span class="muted small">{{ s.kind }}</span></li>{% endfor %}</ol>
+  </div>
+</section>
+
+<section class="card">
+  <details>
+    <summary><strong>Agent trace</strong> <span class="muted small">{{ r.trace|length }} events{% if r.usage %} · {{ r.usage.get("input_tokens", 0) }} in / {{ r.usage.get("output_tokens", 0) }} out tokens{% endif %}</span></summary>
+    <ol class="trace">{% for ev in r.trace %}<li class="ev-{{ ev.kind }}"><span class="kind">{{ ev.kind }}</span> {{ ev.message }}</li>{% endfor %}</ol>
+    {% if r.warnings %}<h3>Run notes</h3><ul class="small">{% for w in r.warnings %}<li>{{ w }}</li>{% endfor %}</ul>{% endif %}
+  </details>
+</section>
+{% endblock %}

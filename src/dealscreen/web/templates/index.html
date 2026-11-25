@@ -1,0 +1,83 @@
+{% extends "base.html" %}
+{% block content %}
+<section class="hero">
+  <h1>Screen a company against your thesis</h1>
+  <p class="muted">Resolves the legal entity on Companies House, researches the company with a tool-using agent, scores it against a YAML thesis and drafts a cited first-pass memo with red flags.</p>
+</section>
+
+<section class="grid-2">
+  <form id="screen-form" class="card">
+    <h2>Single company</h2>
+    <label>Company name or UK company number
+      <input name="company" required minlength="2" maxlength="120" placeholder="e.g. Octopus Energy or 09263424">
+    </label>
+    <div class="row">
+      <label>Website <span class="muted">(optional)</span>
+        <input name="website" maxlength="300" placeholder="octopus.energy">
+      </label>
+      <label>Company number <span class="muted">(optional)</span>
+        <input name="company_number" maxlength="12" placeholder="09263424">
+      </label>
+    </div>
+    <label>Thesis
+      <select name="thesis">
+        {% for key, t in theses.items() %}<option value="{{ key }}"{% if key == default_thesis %} selected{% endif %}>{{ t.name }}</option>{% endfor %}
+      </select>
+    </label>
+    {% if llm_enabled %}
+    <label class="check"><input type="checkbox" name="data_only" value="true"> Data-only (skip the LLM agent)</label>
+    {% endif %}
+    <div class="row-btns">
+      <button type="submit" class="btn">Run screening</button>
+      <button type="button" id="demo-btn" class="btn btn-secondary" title="Fictional company, offline fixtures, scripted model responses">Run offline sample</button>
+    </div>
+  </form>
+
+  <form id="batch-form" class="card">
+    <h2>Pipeline batch</h2>
+    <p class="muted small">CSV with a <code>company</code> column and optional <code>website</code>, <code>company_number</code>. Up to 50 rows.</p>
+    <label>CSV file <input type="file" name="file" accept=".csv,text/csv" required></label>
+    <label>Thesis
+      <select name="thesis">
+        {% for key, t in theses.items() %}<option value="{{ key }}"{% if key == default_thesis %} selected{% endif %}>{{ t.name }}</option>{% endfor %}
+      </select>
+    </label>
+    {% if llm_enabled %}
+    <label class="check"><input type="checkbox" name="data_only" value="true"> Data-only</label>
+    {% endif %}
+    <button type="submit" class="btn btn-secondary">Screen pipeline</button>
+  </form>
+</section>
+
+<section id="live" class="card hidden">
+  <div class="live-head"><h2>Live run</h2><span id="live-status" class="pill">running</span></div>
+  <ol id="trace" class="trace"></ol>
+</section>
+
+<section class="card">
+  <div class="live-head"><h2>Pipeline</h2><span class="muted small">{{ results|length }} screenings</span></div>
+  {% if results %}
+  <table class="table">
+    <thead><tr><th>Company</th><th>Recommendation</th><th>Score</th><th>Coverage</th><th>Flags</th><th>Review</th><th>Mode</th><th>Screened</th></tr></thead>
+    <tbody>
+    {% for r in results %}
+      {% set high = r.red_flags | selectattr("severity", "equalto", "high") | list | length %}
+      <tr onclick="location.href='/screenings/{{ r.id }}'">
+        <td><strong>{{ r.company.name if r.company else r.query }}</strong>{% if r.company %}<div class="muted small">{{ r.company.company_number }}</div>{% endif %}</td>
+        <td><span class="rec rec-{{ r.score.recommendation.value }}">{{ r.score.recommendation.value }}</span></td>
+        <td>{{ "%.0f"|format(r.score.total) }}</td>
+        <td>{{ "%.0f"|format(r.score.coverage * 100) }}%</td>
+        <td>{% if high %}<span class="flag flag-high">{{ high }} high</span>{% else %}<span class="muted">{{ r.red_flags|length }}</span>{% endif %}</td>
+        <td><span class="review review-{{ r.review_status.value }}">{{ r.review_status.value }}</span></td>
+        <td class="muted small">{{ r.mode }}</td>
+        <td class="muted small">{{ r.created_at.strftime("%d %b %H:%M") }}</td>
+      </tr>
+    {% endfor %}
+    </tbody>
+  </table>
+  {% else %}
+  <p class="muted">No screenings yet. Run one above.</p>
+  {% endif %}
+</section>
+{% endblock %}
+{% block scripts %}<script src="/static/app.js"></script>{% endblock %}
