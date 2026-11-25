@@ -170,3 +170,12 @@ def test_low_confidence_name_match_is_not_accepted() -> None:
     rec = resolve(FakeCH(), SourceLedger(), "Ohme Technologies")  # type: ignore[arg-type]
     assert rec.company is None and rec.candidates
     assert "No confident" in rec.warnings[0]
+
+
+def test_wikipedia_rejects_irrelevant_fuzzy_matches() -> None:
+    from dealscreen.sources.wikipedia import _relevant
+
+    assert not _relevant("Zenobe Energy", "Electric motor", "An electric motor converts energy...")
+    assert _relevant(
+        "Octopus Energy", "Octopus Energy", "Octopus Energy Group is a British energy company"
+    )

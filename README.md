@@ -124,7 +124,7 @@ Rule types: `company_active`, `no_insolvency`, `filings_current`, `age_years` (`
 ## Testing
 
 ```bash
-pytest            # 57 tests, fully offline
+pytest            # 58 tests, fully offline
 ruff check . && mypy src
 ```
 

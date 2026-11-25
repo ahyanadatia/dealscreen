@@ -19,6 +19,13 @@ class WikiSummary:
     extract: str
 
 
+def _relevant(query: str, title: str, extract: str) -> bool:
+    """Wikipedia search is fuzzy; only accept a page that mentions the query's key terms."""
+    terms = [t for t in query.lower().replace('"', " ").split() if len(t) > 3] or [query.lower()]
+    haystack = f"{title} {extract}".lower()
+    return all(t in haystack for t in terms[:3])
+
+
 def lookup(http: HttpClient, query: str) -> WikiSummary | None:
     data: Any = http.get(SEARCH.format(q=quote_plus(query))).json()
     pages = data.get("pages") or []
@@ -27,6 +34,8 @@ def lookup(http: HttpClient, query: str) -> WikiSummary | None:
     key = pages[0].get("key") or pages[0].get("title", "")
     summary: Any = http.get(SUMMARY.format(title=quote(str(key), safe=""))).json()
     url = ((summary.get("content_urls") or {}).get("desktop") or {}).get("page", "")
-    return WikiSummary(
-        title=summary.get("title", key), url=url, extract=summary.get("extract", "")[:3000]
-    )
+    title = str(summary.get("title", key))
+    extract = str(summary.get("extract", ""))
+    if not _relevant(query, title, extract):
+        return None
+    return WikiSummary(title=title, url=url, extract=extract[:3000])
