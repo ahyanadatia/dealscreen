@@ -1,0 +1,52 @@
+# Example thesis: generalist growth-stage B2B software.
+name: B2B software (growth)
+description: >
+  Growth-stage B2B software companies with recurring revenue, strong retention signals and
+  a defensible position in a vertical or workflow.
+thresholds:
+  advance: 70
+  review: 50
+min_coverage: 0.5
+criteria:
+  - id: product_category
+    label: B2B software focus
+    weight: 3
+    method: agent
+    must_have: true
+    guidance: Is the core product software sold to businesses (SaaS, platform, API, data product)?
+  - id: traction
+    label: Commercial traction
+    weight: 3
+    method: agent
+    guidance: Paying customers, named logos, funding from credible investors, hiring and expansion signals.
+  - id: defensibility
+    label: Defensibility
+    weight: 2
+    method: agent
+    guidance: Workflow lock-in, proprietary data, integrations, network effects or regulatory moats.
+  - id: market
+    label: Market size & timing
+    weight: 2
+    method: agent
+    guidance: Is the addressable market large and growing, and is there a clear "why now"?
+  - id: registry_active
+    label: Active company
+    weight: 1
+    method: rule
+    must_have: true
+    rule: { type: company_active }
+  - id: filings_current
+    label: Filings up to date
+    weight: 1
+    method: rule
+    rule: { type: filings_current }
+  - id: maturity
+    label: Growth-stage maturity
+    weight: 1
+    method: rule
+    rule: { type: age_years, min: 3, max: 15 }
+  - id: sic_alignment
+    label: Registered activity (SIC)
+    weight: 0.5
+    method: rule
+    rule: { type: sic_prefix, prefixes: ["58", "62", "63"] }

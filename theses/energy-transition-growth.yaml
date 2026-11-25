@@ -1,0 +1,78 @@
+# Example thesis: growth-stage technology for the energy transition and industrial efficiency.
+# Edit weights, guidance and rules to match your own mandate. `agent` criteria are rated 0-5 by
+# the research agent with cited evidence; `rule` criteria are checked against registry data.
+name: Energy transition & industrial tech (growth)
+description: >
+  Growth-stage technology companies that make energy systems cleaner and industry more
+  efficient, with proven commercial traction and a credible path to scale across Europe.
+focus: Software, data and tech-enabled hardware sold B2B to utilities, industrials, fleets and infrastructure owners.
+thresholds:
+  advance: 70
+  review: 50
+min_coverage: 0.5
+criteria:
+  - id: sector_fit
+    label: Sector fit
+    weight: 3
+    method: agent
+    must_have: true
+    guidance: >
+      Does the core product directly enable decarbonisation, energy efficiency, grid resilience,
+      electrification or resource efficiency? Score 0 if the link is incidental or marketing only.
+  - id: technology_moat
+    label: Technology & data moat
+    weight: 2
+    method: agent
+    guidance: >
+      Proprietary technology, data network effects, AI/ML or hardware IP that would be hard for a
+      well-funded competitor to replicate within two years.
+  - id: commercial_traction
+    label: Commercial traction
+    weight: 2.5
+    method: agent
+    guidance: >
+      Evidence of paying customers, named enterprise logos, revenue scale, funding rounds led by
+      credible investors, or international expansion. Growth stage means product-market fit is shown.
+  - id: business_model
+    label: Business model quality
+    weight: 1.5
+    method: agent
+    guidance: >
+      Recurring or contracted revenue, B2B sales motion, gross-margin profile and capital intensity.
+      Software/SaaS and tech-enabled services score higher than project-based or commodity revenue.
+  - id: impact_measurability
+    label: Measurable impact
+    weight: 1
+    method: agent
+    guidance: >
+      Is the environmental or efficiency impact quantified (tonnes CO2e, MWh saved, waste avoided)
+      in a way that could be reported to investors?
+  - id: registry_active
+    label: Active company
+    weight: 1
+    method: rule
+    must_have: true
+    rule: { type: company_active }
+  - id: filings_current
+    label: Filings up to date
+    weight: 1
+    method: rule
+    rule: { type: filings_current }
+  - id: no_insolvency
+    label: No insolvency history
+    weight: 1
+    method: rule
+    must_have: true
+    rule: { type: no_insolvency }
+  - id: maturity
+    label: Growth-stage maturity
+    weight: 1
+    method: rule
+    rule: { type: age_years, min: 3, max: 15 }
+  - id: sic_alignment
+    label: Registered activity (SIC)
+    weight: 0.5
+    method: rule
+    rule:
+      type: sic_prefix
+      prefixes: ["35", "27", "28", "43", "62", "63", "71", "72", "38", "49"]
