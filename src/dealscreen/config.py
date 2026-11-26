@@ -2,11 +2,19 @@
 
 from __future__ import annotations
 
+import os
 from functools import lru_cache
 from pathlib import Path
 
 from pydantic import Field, SecretStr
 from pydantic_settings import BaseSettings, SettingsConfigDict
+
+
+def default_data_dir() -> Path:
+    # Vercel's function filesystem is read-only except /tmp (ephemeral).
+    if os.environ.get("VERCEL"):
+        return Path("/tmp/dealscreen")
+    return Path(".dealscreen")
 
 
 class Settings(BaseSettings):
@@ -19,7 +27,7 @@ class Settings(BaseSettings):
     anthropic_web_search: bool = Field(default=False, alias="DEALSCREEN_ANTHROPIC_WEB_SEARCH")
     companies_house_api_key: SecretStr | None = Field(default=None, alias="COMPANIES_HOUSE_API_KEY")
 
-    data_dir: Path = Field(default=Path(".dealscreen"), alias="DEALSCREEN_DATA_DIR")
+    data_dir: Path = Field(default_factory=default_data_dir, alias="DEALSCREEN_DATA_DIR")
     cache_ttl_seconds: int = Field(default=24 * 3600, alias="DEALSCREEN_CACHE_TTL")
     http_timeout_seconds: float = Field(default=15.0, alias="DEALSCREEN_HTTP_TIMEOUT")
     max_agent_turns: int = Field(default=14, alias="DEALSCREEN_MAX_TURNS")

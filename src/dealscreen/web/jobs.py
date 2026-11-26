@@ -41,6 +41,7 @@ class JobManager:
     def __init__(self, max_workers: int = 2, max_queued: int = 25):
         self._pool = ThreadPoolExecutor(max_workers=max_workers, thread_name_prefix="screen")
         self._jobs: dict[str, Job] = {}
+        self._pending: dict[str, Callable[[], None]] = {}
         self._lock = threading.Lock()
         self.max_queued = max_queued
 
@@ -49,12 +50,20 @@ class JobManager:
             return sum(1 for j in self._jobs.values() if j.status in {"queued", "running"})
 
     def submit(
-        self, label: str, fn: Callable[[Callable[[TraceEvent], None]], ScreeningResult]
+        self,
+        label: str,
+        fn: Callable[[Callable[[TraceEvent], None]], ScreeningResult],
+        *,
+        job_id: str | None = None,
+        start: bool = True,
     ) -> Job:
         if self.active_count() >= self.max_queued:
             raise OverflowError("too many screenings in progress; try again shortly")
-        job = Job(id=uuid.uuid4().hex[:12], label=label)
+        job = Job(id=job_id or uuid.uuid4().hex[:12], label=label)
         with self._lock:
+            existing = self._jobs.get(job.id)
+            if existing is not None:
+                return existing
             self._jobs[job.id] = job
 
         def run() -> None:
@@ -66,7 +75,20 @@ class JobManager:
             else:
                 job.finish("done", result_id=result.id)
 
-        self._pool.submit(run)
+        if start:
+            self._pool.submit(run)
+        else:
+            with self._lock:
+                self._pending[job.id] = run
+        return job
+
+    def start(self, job_id: str) -> Job | None:
+        """Start a deferred job. Idempotent; safe if the job is already running."""
+        with self._lock:
+            run = self._pending.pop(job_id, None)
+            job = self._jobs.get(job_id)
+        if run is not None:
+            self._pool.submit(run)
         return job
 
     def get(self, job_id: str) -> Job | None:

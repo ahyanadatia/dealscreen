@@ -143,3 +143,39 @@ def test_cli_demo_list_review_and_doctor(
     assert "disabled" in runner.invoke(cli_app, ["doctor"]).output
     no_key = runner.invoke(cli_app, ["screen", "Acme"])
     assert no_key.exit_code == 2 and "ANTHROPIC_API_KEY" in no_key.output
+
+
+def test_vercel_default_data_dir(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
+    monkeypatch.chdir(tmp_path)
+    monkeypatch.setenv("VERCEL", "1")
+    monkeypatch.delenv("DEALSCREEN_DATA_DIR", raising=False)
+    assert Settings().data_dir == Path("/tmp/dealscreen")
+    monkeypatch.setenv("DEALSCREEN_DATA_DIR", str(tmp_path / "custom"))
+    assert Settings().data_dir == tmp_path / "custom"
+
+
+def test_serverless_demo_runs_inside_sse(settings: Settings) -> None:
+    def factory(thesis: Thesis, data_only: bool) -> Screener:
+        http = offline_http()
+        return Screener(
+            settings, thesis, http=http, ch=CompaniesHousePublicSite(http), data_only=True
+        )
+
+    app = create_app(
+        settings=settings,
+        thesis_dir=Path("theses"),
+        screener_factory=factory,
+        serverless=True,
+    )
+    client = TestClient(app)
+    res = client.post("/api/demo", data={"thesis": "energy-transition-growth"})
+    job_id = res.json()["job_id"]
+    assert job_id.startswith("t1.")
+    queued = client.get(f"/api/jobs/{job_id}").json()
+    assert queued["status"] == "queued"
+    events = client.get(f"/api/jobs/{job_id}/events").text
+    assert "event: end" in events
+    job = client.get(f"/api/jobs/{job_id}").json()
+    assert job["status"] == "done" and job["result_id"]
+    page = client.get(f"/screenings/{job['result_id']}")
+    assert page.status_code == 200 and "Sample output." in page.text

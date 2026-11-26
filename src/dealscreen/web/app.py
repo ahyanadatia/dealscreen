@@ -3,11 +3,13 @@
 from __future__ import annotations
 
 import asyncio
+import base64
 import json
+import os
 from collections.abc import AsyncIterator, Callable
 from contextlib import asynccontextmanager
 from pathlib import Path
-from typing import Annotated, Any
+from typing import Annotated, Any, Literal, TypedDict
 
 import markdown as md
 from fastapi import FastAPI, File, Form, HTTPException, Request, UploadFile
@@ -21,7 +23,7 @@ from dealscreen.models import ReviewStatus, ScreeningResult, TraceEvent
 from dealscreen.pipeline import Screener, ScreenRequest, build_http, build_llm, read_pipeline_csv
 from dealscreen.store import ResultStore
 from dealscreen.thesis import Thesis, load_thesis
-from dealscreen.web.jobs import JobManager
+from dealscreen.web.jobs import Job, JobManager
 from dealscreen.web.ratelimit import SlidingWindowLimiter
 
 HERE = Path(__file__).parent
@@ -29,6 +31,36 @@ MAX_CSV_BYTES = 200_000
 MAX_BATCH_ROWS = 50
 
 ScreenerFactory = Callable[[Thesis, bool], Screener]
+
+
+class JobTicket(TypedDict, total=False):
+    kind: Literal["demo", "screen"]
+    thesis: str
+    query: str
+    website: str
+    company_number: str
+    data_only: bool
+
+
+def encode_job_ticket(ticket: JobTicket) -> str:
+    raw = json.dumps(ticket, separators=(",", ":"), sort_keys=True).encode()
+    return "t1." + base64.urlsafe_b64encode(raw).decode().rstrip("=")
+
+
+def decode_job_ticket(job_id: str) -> JobTicket | None:
+    if not job_id.startswith("t1."):
+        return None
+    data = job_id[3:]
+    pad = "=" * (-len(data) % 4)
+    try:
+        parsed = json.loads(base64.urlsafe_b64decode(data + pad))
+    except (ValueError, json.JSONDecodeError):
+        return None
+    if not isinstance(parsed, dict) or parsed.get("kind") not in {"demo", "screen"}:
+        return None
+    if not isinstance(parsed.get("thesis"), str):
+        return None
+    return parsed  # type: ignore[return-value]
 
 
 def load_theses(thesis_dir: Path) -> dict[str, Thesis]:
@@ -46,6 +78,7 @@ def create_app(
     thesis_dir: Path = Path("theses"),
     screener_factory: ScreenerFactory | None = None,
     store: ResultStore | None = None,
+    serverless: bool | None = None,
 ) -> FastAPI:
     settings = settings or Settings()
     theses = load_theses(thesis_dir)
@@ -53,6 +86,9 @@ def create_app(
     jobs = JobManager(max_workers=max(1, settings.batch_concurrency))
     limiter = SlidingWindowLimiter(max_requests=20, window_seconds=60)
     llm_enabled = settings.llm_enabled or screener_factory is not None
+    # On Vercel, instances don't share memory or background threads, so job
+    # parameters travel in the job id and work runs inside the SSE request.
+    serverless = os.environ.get("VERCEL") == "1" if serverless is None else serverless
 
     if screener_factory is None:
         http = build_http(settings)
@@ -88,7 +124,9 @@ def create_app(
             raise HTTPException(400, f"Unknown thesis '{key}'")
         return theses[key]
 
-    def start(req: ScreenRequest, thesis: Thesis, data_only: bool) -> str:
+    def screen_fn(
+        req: ScreenRequest, thesis: Thesis, data_only: bool
+    ) -> Callable[[Callable[[TraceEvent], None]], ScreeningResult]:
         screener = factory(thesis, data_only)
 
         def run(emit: Callable[[TraceEvent], None]) -> ScreeningResult:
@@ -96,8 +134,58 @@ def create_app(
             store.save(result)
             return result
 
+        return run
+
+    def demo_fn(thesis: Thesis) -> Callable[[Callable[[TraceEvent], None]], ScreeningResult]:
+        from dealscreen.demo import run_demo
+
+        def run(emit: Callable[[TraceEvent], None]) -> ScreeningResult:
+            result = run_demo(settings, thesis, emit)
+            store.save(result)
+            return result
+
+        return run
+
+    def start(req: ScreenRequest, thesis_key: str, thesis: Thesis, data_only: bool) -> str:
+        if serverless:
+            return encode_job_ticket(
+                {
+                    "kind": "screen",
+                    "thesis": thesis_key,
+                    "query": req.query,
+                    "website": req.website or "",
+                    "company_number": req.company_number or "",
+                    "data_only": data_only,
+                }
+            )
         try:
-            return jobs.submit(req.query, run).id
+            return jobs.submit(req.query, screen_fn(req, thesis, data_only)).id
+        except OverflowError as exc:
+            raise HTTPException(503, str(exc)) from exc
+
+    def ticket_label(ticket: JobTicket) -> str:
+        if ticket.get("kind") == "demo":
+            return "Sample: Gridline Analytics"
+        return str(ticket.get("query") or "screening")
+
+    def materialise_ticket(job_id: str) -> Job | None:
+        ticket = decode_job_ticket(job_id)
+        if ticket is None:
+            return None
+        thesis = get_thesis(str(ticket["thesis"]))
+        if ticket.get("kind") == "demo":
+            fn = demo_fn(thesis)
+            label = ticket_label(ticket)
+        else:
+            req = ScreenRequest(
+                str(ticket.get("query") or "").strip(),
+                (ticket.get("website") or "").strip() or None,
+                (ticket.get("company_number") or "").strip() or None,
+            )
+            fn = screen_fn(req, thesis, bool(ticket.get("data_only")))
+            label = ticket_label(ticket)
+        try:
+            return jobs.submit(label, fn, job_id=job_id, start=False)
         except OverflowError as exc:
             raise HTTPException(503, str(exc)) from exc
 
@@ -132,7 +220,7 @@ def create_app(
         req = ScreenRequest(
             company.strip(), website.strip() or None, company_number.strip() or None
         )
-        return {"job_id": start(req, get_thesis(thesis), data_only)}
+        return {"job_id": start(req, thesis, get_thesis(thesis), data_only)}
 
     @app.post("/api/batch")
     async def create_batch(
@@ -158,23 +246,17 @@ def create_app(
         if len(reqs) > MAX_BATCH_ROWS:
             raise HTTPException(400, f"Batch limited to {MAX_BATCH_ROWS} companies")
         th = get_thesis(thesis)
-        return {"job_ids": [start(r, th, data_only) for r in reqs]}
+        return {"job_ids": [start(r, thesis, th, data_only) for r in reqs]}
 
     @app.post("/api/demo")
     def create_demo(request: Request, thesis: Annotated[str, Form()]) -> dict[str, str]:
         """Offline sample run on a fictional company with scripted model responses."""
         check_rate(request)
-        from dealscreen.demo import run_demo
-
         th = get_thesis(thesis)
-
-        def run(emit: Callable[[TraceEvent], None]) -> ScreeningResult:
-            result = run_demo(settings, th, emit)
-            store.save(result)
-            return result
-
+        if serverless:
+            return {"job_id": encode_job_ticket({"kind": "demo", "thesis": thesis})}
         try:
-            return {"job_id": jobs.submit("Sample: Gridline Analytics", run).id}
+            return {"job_id": jobs.submit("Sample: Gridline Analytics", demo_fn(th)).id}
         except OverflowError as exc:
             raise HTTPException(503, str(exc)) from exc
 
@@ -182,7 +264,16 @@ def create_app(
     def job_status(job_id: str) -> dict[str, Any]:
         job = jobs.get(job_id)
         if job is None:
-            raise HTTPException(404, "Unknown job")
+            ticket = decode_job_ticket(job_id)
+            if ticket is None:
+                raise HTTPException(404, "Unknown job")
+            return {
+                "id": job_id,
+                "label": ticket_label(ticket),
+                "status": "queued",
+                "result_id": None,
+                "error": None,
+            }
         return {
             "id": job.id,
             "label": job.label,
@@ -195,7 +286,10 @@ def create_app(
     async def job_events(job_id: str) -> StreamingResponse:
         job = jobs.get(job_id)
         if job is None:
+            job = materialise_ticket(job_id)
+        if job is None:
             raise HTTPException(404, "Unknown job")
+        jobs.start(job.id)
 
         async def stream() -> AsyncIterator[str]:
             seen = 0
